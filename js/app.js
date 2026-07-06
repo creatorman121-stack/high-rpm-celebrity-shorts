@@ -1,11 +1,13 @@
 // Load data
 const scripts = [
   'js/data/packs.js',
+  'js/data/new-packs.js',
   'js/data/strategy.js',
   'js/data/rpm.js',
   'js/data/editing.js',
   'js/data/channel.js',
   'js/data/schedule.js',
+  'js/data/trends.js',
   'js/data/prompts.js',
   'js/data/monetize.js'
 ];
@@ -25,6 +27,7 @@ function init() {
   renderEditing();
   renderChannel();
   renderSchedule();
+  renderTrends();
   renderPrompts();
   renderMonetize();
   setupNav();
@@ -421,4 +424,66 @@ function setupFadeIn() {
     el.classList.add('fade-in');
     observer.observe(el);
   });
+}
+
+// ===== MERGE NEW PACKS =====
+const _origRenderPacks = renderPacks;
+renderPacks = function() {
+  // Merge new packs into PACKS array
+  if (window.NEW_PACKS) {
+    window.PACKS = window.PACKS.concat(window.NEW_PACKS);
+  }
+  _origRenderPacks();
+};
+
+// ===== RENDER TRENDS =====
+function renderTrends() {
+  const el = document.getElementById('trendsContent');
+  if (!el || !window.TRENDS_DATA) return;
+  const t = window.TRENDS_DATA;
+  el.innerHTML = `
+    <div class="highlight-box">
+      <h4>&#9889; The Core Strategy</h4>
+      <p>${t.strategy}</p>
+    </div>
+    <div class="divider"></div>
+    <h3 style="font-family:var(--font-display);font-size:1.6rem;letter-spacing:1px;margin-bottom:1.5rem;">&#128308; The Non-Negotiable Rules</h3>
+    <div class="warning-box">
+      <h4>&#9888; Trend-Jacking Rules (Break These and You Waste the Trend)</h4>
+      <ul class="checklist">
+        ${t.rules.map(r => '<li>' + r + '</li>').join('')}
+      </ul>
+    </div>
+    <div class="divider"></div>
+    <h3 style="font-family:var(--font-display);font-size:1.6rem;letter-spacing:1px;margin-bottom:1.5rem;">&#127919; Trend Triggers — What to Watch For</h3>
+    <div class="card-grid card-grid-3">
+      ${t.triggers.map(tr => `
+        <div class="card">
+          <h4 style="color:var(--accent-gold);">${tr.event}</h4>
+          <p>${tr.angle}</p>
+          <div style="margin-top:0.75rem;">
+            <span class="card-tag tag-finance">Pack: ${tr.pack}</span>
+            <span class="rpm-meter rpm-high" style="margin-left:0.5rem;">Speed: ${tr.speed}</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="divider"></div>
+    <h3 style="font-family:var(--font-display);font-size:1.6rem;letter-spacing:1px;margin-bottom:1rem;">&#128200; A/B Testing Framework</h3>
+    <p style="color:var(--text-secondary);margin-bottom:1.5rem;font-size:0.9rem;">${t.abTesting.desc}</p>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Variable</th><th>Options to Test</th><th>Key Metric</th></tr></thead>
+        <tbody>
+          ${t.abTesting.variables.map(v => '<tr><td style="color:var(--accent-neon);font-weight:600;">' + v.variable + '</td><td>' + v.options + '</td><td style="color:var(--accent-gold);">' + v.metric + '</td></tr>').join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="highlight-box">
+      <h4>&#128197; The 6-Week A/B Testing Calendar</h4>
+      <ul>
+        ${t.abTesting.method.map(m => '<li>' + m + '</li>').join('')}
+      </ul>
+    </div>
+  `;
 }
