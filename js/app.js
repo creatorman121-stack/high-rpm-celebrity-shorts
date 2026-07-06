@@ -9,7 +9,8 @@ const scripts = [
   'js/data/schedule.js',
   'js/data/trends.js',
   'js/data/prompts.js',
-  'js/data/monetize.js'
+  'js/data/monetize.js',
+  'js/data/planner.js'
 ];
 
 let loaded = 0;
@@ -30,6 +31,7 @@ function init() {
   renderTrends();
   renderPrompts();
   renderMonetize();
+  renderPlanner();
   setupNav();
   setupFadeIn();
 }
@@ -486,4 +488,271 @@ function renderTrends() {
       </ul>
     </div>
   `;
+}
+
+// ===== RENDER PLANNER =====
+function renderPlanner() {
+  if (!window.PLANNER_DATA) return;
+  const data = window.PLANNER_DATA;
+  const el = document.getElementById('plannerContent');
+  const batchEl = document.getElementById('batchContent');
+  const progressEl = document.getElementById('plannerProgress');
+  const controlsEl = document.getElementById('plannerControls');
+
+  // Load saved statuses from localStorage
+  const saved = JSON.parse(localStorage.getItem('plannerStatus') || '{}');
+  data.videos.forEach(v => {
+    v.status = saved[v.id] || 'pending';
+  });
+
+  // Progress bar
+  const completed = data.videos.filter(v => v.status === 'scheduled').length;
+  const inProgress = data.videos.filter(v => v.status !== 'pending' && v.status !== 'scheduled').length;
+  const pct = Math.round((completed / data.totalVideos) * 100);
+  progressEl.innerHTML = `
+    <div class="planner-progress-bar">
+      <div class="planner-progress-fill" style="width:${pct}%"></div>
+    </div>
+    <div class="planner-progress-stats">
+      <span class="stat-pending">&#9898; ${data.videos.filter(v=>v.status==='pending').length} Pending</span>
+      <span class="stat-filmed">&#127909; ${data.videos.filter(v=>v.status==='filmed').length} Filmed</span>
+      <span class="stat-edited">&#127903; ${data.videos.filter(v=>v.status==='edited').length} Edited</span>
+      <span class="stat-captioned">&#128483; ${data.videos.filter(v=>v.status==='captioned').length} Captioned</span>
+      <span class="stat-scheduled">&#128197; ${completed} Scheduled</span>
+      <span class="stat-pct">${pct}% Complete</span>
+    </div>
+  `;
+
+  // Filter controls
+  controlsEl.innerHTML = `
+    <div class="planner-filters">
+      <button class="filter-btn active" data-filter="all">All (${data.totalVideos})</button>
+      <button class="filter-btn" data-filter="pending">Pending</button>
+      <button class="filter-btn" data-filter="filmed">Filmed</button>
+      <button class="filter-btn" data-filter="edited">Edited</button>
+      <button class="filter-btn" data-filter="captioned">Captioned</button>
+      <button class="filter-btn" data-filter="scheduled">Scheduled</button>
+      <button class="filter-btn filter-reset" data-filter="reset">&#128260; Reset All</button>
+    </div>
+  `;
+  setupPlannerFilters();
+
+  // Group videos by day
+  const days = {};
+  data.videos.forEach(v => {
+    if (!days[v.day]) days[v.day] = [];
+    days[v.day].push(v);
+  });
+
+  // Render day groups
+  let html = '';
+  Object.keys(days).sort((a,b) => a-b).forEach(day => {
+    const dayVideos = days[day];
+    const dayComplete = dayVideos.filter(v => v.status === 'scheduled').length;
+    html += `
+      <div class="planner-day" id="day-${day}">
+        <div class="planner-day-header">
+          <h3>&#128197; Day ${day} <span class="day-count">(${dayComplete}/${dayVideos.length} scheduled)</span></h3>
+          <div class="day-progress">
+            <div class="day-progress-fill" style="width:${Math.round(dayComplete/dayVideos.length*100)}%"></div>
+          </div>
+        </div>
+        <div class="planner-videos">
+          ${dayVideos.map(v => renderVideoCard(v)).join('')}
+        </div>
+      </div>
+    `;
+  });
+  el.innerHTML = html;
+
+  // Batch workflow
+  batchEl.innerHTML = `
+    <h3 style="font-family:var(--font-display);font-size:1.6rem;letter-spacing:1px;margin-bottom:0.5rem;">&#9889; ${data.batchWorkflow.title}</h3>
+    <p style="color:var(--text-secondary);margin-bottom:1.5rem;font-size:0.9rem;">${data.batchWorkflow.desc}</p>
+    <div class="batch-steps">
+      ${data.batchWorkflow.steps.map((s, i) => `
+        <div class="batch-step">
+          <div class="batch-step-num">${i + 1}</div>
+          <div class="batch-step-text">${s}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="highlight-box" style="margin-top:2rem;">
+      <h4>&#128176; The Math: Why 30 Videos Before Launch</h4>
+      <p>YouTube's algorithm needs <strong>at least 3-5 videos</strong> to understand your channel and start recommending. By launching with 30 videos scheduled over 10 days (3/day), you give the algorithm a massive data set on day one. Most creators post 1 video and wait. You'll post 3/day for 10 days straight. The algorithm will see consistent output and start pushing your content within the first week. Your RPM will be higher from day 1 because advertisers see an active, consistent channel.</p>
+    </div>
+  `;
+
+  // Setup status change handlers
+  setupStatusHandlers();
+
+  // Setup script toggle handlers
+  setupScriptToggles();
+}
+
+function renderVideoCard(v) {
+  const statusIcons = {
+    pending: '&#9898;',
+    filmed: '&#127909;',
+    edited: '&#127903;',
+    captioned: '&#128483;',
+    scheduled: '&#128197;'
+  };
+  const statusLabels = {
+    pending: 'Pending',
+    filmed: 'Filmed',
+    edited: 'Edited',
+    captioned: 'Captioned',
+    scheduled: 'Scheduled'
+  };
+  return `
+    <div class="video-card ${v.status}" data-id="${v.id}" data-status="${v.status}">
+      <div class="video-card-header">
+        <span class="video-id">#${String(v.id).padStart(2,'0')}</span>
+        <span class="video-pack">${v.pack}</span>
+        <span class="rpm-meter ${v.rpmClass}">${v.rpm} RPM</span>
+      </div>
+      <div class="video-card-body">
+        <div class="video-celeb">&#11088; ${v.celebrity}</div>
+        <div class="video-hook">${v.hook}</div>
+        <button class="script-toggle" data-video-id="${v.id}">&#128196; View Script</button>
+        <div class="video-script" id="script-${v.id}" style="display:none;">
+          <h4>&#127916; Full Script (0-60s)</h4>
+          <p>${v.script}</p>
+        </div>
+      </div>
+      <div class="video-card-footer">
+        <div class="video-status-group">
+          <select class="status-select" data-video-id="${v.id}">
+            <option value="pending" ${v.status==='pending'?'selected':''}>&#9898; Pending</option>
+            <option value="filmed" ${v.status==='filmed'?'selected':''}>&#127909; Filmed</option>
+            <option value="edited" ${v.status==='edited'?'selected':''}>&#127903; Edited</option>
+            <option value="captioned" ${v.status==='captioned'?'selected':''}>&#128483; Captioned</option>
+            <option value="scheduled" ${v.status==='scheduled'?'selected':''}>&#128197; Scheduled</option>
+          </select>
+          <span class="video-slot">&#128336; ${v.slot}</span>
+        </div>
+        <div class="video-edits-toggle" data-video-id="${v.id}">
+          <span>&#128295; ${v.edits.length} Edit Steps</span>
+        </div>
+        <div class="video-edits" id="edits-${v.id}" style="display:none;">
+          <ul class="checklist">
+            ${v.edits.map(e => '<li>'+e+'</li>').join('')}
+          </ul>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function setupStatusHandlers() {
+  document.querySelectorAll('.status-select').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      const id = parseInt(e.target.dataset.videoId);
+      const newStatus = e.target.value;
+      // Update data
+      const video = window.PLANNER_DATA.videos.find(v => v.id === id);
+      if (video) video.status = newStatus;
+      // Save to localStorage
+      const saved = JSON.parse(localStorage.getItem('plannerStatus') || '{}');
+      saved[id] = newStatus;
+      localStorage.setItem('plannerStatus', JSON.stringify(saved));
+      // Update card class
+      const card = e.target.closest('.video-card');
+      card.dataset.status = newStatus;
+      card.className = 'video-card ' + newStatus;
+      // Re-render progress
+      updateProgress();
+    });
+  });
+}
+
+function setupScriptToggles() {
+  document.querySelectorAll('.script-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.videoId;
+      const scriptEl = document.getElementById('script-' + id);
+      const isOpen = scriptEl.style.display !== 'none';
+      scriptEl.style.display = isOpen ? 'none' : 'block';
+      btn.textContent = isOpen ? '📄 View Script' : '📄 Hide Script';
+    });
+  });
+  document.querySelectorAll('.video-edits-toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      const id = toggle.dataset.videoId;
+      const editsEl = document.getElementById('edits-' + id);
+      const isOpen = editsEl.style.display !== 'none';
+      editsEl.style.display = isOpen ? 'none' : 'block';
+    });
+  });
+}
+
+function setupPlannerFilters() {
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const filter = btn.dataset.filter;
+      if (filter === 'reset') {
+        if (confirm('Reset all video statuses to Pending?')) {
+          localStorage.removeItem('plannerStatus');
+          window.PLANNER_DATA.videos.forEach(v => v.status = 'pending');
+          renderPlanner();
+        }
+        return;
+      }
+      // Toggle active class
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // Show/hide cards
+      document.querySelectorAll('.video-card').forEach(card => {
+        if (filter === 'all') {
+          card.style.display = '';
+        } else {
+          card.style.display = card.dataset.status === filter ? '' : 'none';
+        }
+      });
+      // Show/hide day headers if all videos hidden
+      document.querySelectorAll('.planner-day').forEach(dayEl => {
+        const visibleCards = dayEl.querySelectorAll('.video-card:not([style*="display: none"])');
+        dayEl.style.display = visibleCards.length === 0 ? 'none' : '';
+      });
+    });
+  });
+}
+
+function updateProgress() {
+  const data = window.PLANNER_DATA;
+  const completed = data.videos.filter(v => v.status === 'scheduled').length;
+  const pct = Math.round((completed / data.totalVideos) * 100);
+  const progressEl = document.getElementById('plannerProgress');
+  progressEl.innerHTML = `
+    <div class="planner-progress-bar">
+      <div class="planner-progress-fill" style="width:${pct}%"></div>
+    </div>
+    <div class="planner-progress-stats">
+      <span class="stat-pending">&#9898; ${data.videos.filter(v=>v.status==='pending').length} Pending</span>
+      <span class="stat-filmed">&#127909; ${data.videos.filter(v=>v.status==='filmed').length} Filmed</span>
+      <span class="stat-edited">&#127903; ${data.videos.filter(v=>v.status==='edited').length} Edited</span>
+      <span class="stat-captioned">&#128483; ${data.videos.filter(v=>v.status==='captioned').length} Captioned</span>
+      <span class="stat-scheduled">&#128197; ${completed} Scheduled</span>
+      <span class="stat-pct">${pct}% Complete</span>
+    </div>
+  `;
+  // Update day headers
+  const days = {};
+  data.videos.forEach(v => {
+    if (!days[v.day]) days[v.day] = [];
+    days[v.day].push(v);
+  });
+  Object.keys(days).forEach(day => {
+    const dayEl = document.getElementById('day-' + day);
+    if (!dayEl) return;
+    const dayVideos = days[day];
+    const dayComplete = dayVideos.filter(v => v.status === 'scheduled').length;
+    const header = dayEl.querySelector('.planner-day-header');
+    if (header) {
+      header.querySelector('.day-count').textContent = `(${dayComplete}/${dayVideos.length} scheduled)`;
+      const fill = header.querySelector('.day-progress-fill');
+      if (fill) fill.style.width = Math.round(dayComplete/dayVideos.length*100) + '%';
+    }
+  });
 }
